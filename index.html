@@ -1,1 +1,266 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>Set Opener - Szkielet</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Brak CSS - tylko surowy HTML + JS zgodnie z prośbą -->
+</head>
+<body>
+
+  <!-- Nagłówek z kredytami -->
+  <header>
+    <h1>Set Opener - Demo</h1>
+    <div>
+      Portfel (credits): <span id="credits">10</span>
+    </div>
+    <div>
+      <button id="openSetBtn">Otwórz set (koszt: 1 credit)</button>
+    </div>
+    <hr/>
+  </header>
+
+  <!-- Lista 10 kart (ustawiasz nazwy, cenę i szansę przez data-atributy) -->
+  <section>
+    <h2>Set - 10 kart</h2>
+    <ol id="cardList">
+      <!-- Przykładowe pozycje. Edytuj name, data-price (cena), data-chance (procentowa szansa). -->
+      <li class="card" data-name="Skin Alpha"   data-price="12.50" data-chance="25">Skin Alpha — 25% — 12.50</li>
+      <li class="card" data-name="Skin Beta"    data-price="8.00"  data-chance="20">Skin Beta — 20% — 8.00</li>
+      <li class="card" data-name="Skin Gamma"   data-price="5.00"  data-chance="15">Skin Gamma — 15% — 5.00</li>
+      <li class="card" data-name="Skin Delta"   data-price="3.00"  data-chance="10">Skin Delta — 10% — 3.00</li>
+      <li class="card" data-name="Skin Epsilon" data-price="2.00"  data-chance="8">Skin Epsilon — 8% — 2.00</li>
+      <li class="card" data-name="Skin Zeta"    data-price="1.50"  data-chance="7">Skin Zeta — 7% — 1.50</li>
+      <li class="card" data-name="Skin Eta"     data-price="1.00"  data-chance="6">Skin Eta — 6% — 1.00</li>
+      <li class="card" data-name="Skin Theta"   data-price="0.50"  data-chance="4">Skin Theta — 4% — 0.50</li>
+      <li class="card" data-name="Skin Iota"    data-price="0.30"  data-chance="3">Skin Iota — 3% — 0.30</li>
+      <li class="card" data-name="Skin Kappa"   data-price="0.10"  data-chance="2">Skin Kappa — 2% — 0.10</li>
+    </ol>
+    <p>Uwaga: wartości w <code>data-chance</code> powinny sumować się do 100, ale skrypt poradzi sobie też gdy będą inaczej (normalizuje).</p>
+  </section>
+
+  <hr/>
+
+  <!-- Miejsce animacji i wyników losowania -->
+  <section>
+    <h2>Wynik losowania</h2>
+    <div>
+      <strong>Losuje:</strong> <span id="rollingText">—</span>
+    </div>
+    <div>
+      <strong>Wylosowano:</strong> <span id="resultName">—</span>
+    </div>
+    <div>
+      <strong>Cena:</strong> <span id="resultPrice">—</span>
+    </div>
+    <div>
+      <button id="sellBtn" disabled>Sprzedaj (zwraca 90%)</button>
+      <button id="sendBtn" disabled>Wyślij (powiadomienie)</button>
+    </div>
+  </section>
+
+  <script>
+    /**************************************************************************
+     * Szkielet JavaScript do:
+     * - wyświetlania kredytów,
+     * - otwierania seta (koszt 1 credit),
+     * - losowania według procentowych szans,
+     * - animacji "szybkiej zmiany tekstu" podczas losowania,
+     * - obsługi przycisku Sprzedaj (90% ceny dodawane do portfela),
+     * - obsługi przycisku Wyślij (powiadomienie przeglądarki).
+     *
+     * Konfiguracja:
+     * - Aby zmienić ceny i procentowe szanse, edytuj elementy <li class="card">:
+     *   data-name, data-price, data-chance.
+     *
+     * UWAGI:
+     * - Brak połączeń sieciowych, brak płatności.
+     * - Otwarcie seta kosztuje 1 credit (możesz zmienić to w openSetCost).
+     **************************************************************************/
+
+    // --- Ustawienia ---
+    const openSetCost = 1; // koszt otwarcia 1 setu (w credits)
+    const initialCredits = 10;
+
+    // --- Stan aplikacji ---
+    let credits = initialCredits;
+    const creditsEl = document.getElementById('credits');
+    const openSetBtn = document.getElementById('openSetBtn');
+    const cardListEl = document.getElementById('cardList');
+    const rollingTextEl = document.getElementById('rollingText');
+    const resultNameEl = document.getElementById('resultName');
+    const resultPriceEl = document.getElementById('resultPrice');
+    const sellBtn = document.getElementById('sellBtn');
+    const sendBtn = document.getElementById('sendBtn');
+
+    // --- Inicjalizacja DOM i danych kart ---
+    function readCards() {
+      const nodes = Array.from(cardListEl.querySelectorAll('.card'));
+      // map to objects with properties
+      return nodes.map(node => {
+        const name = node.dataset.name || node.textContent.trim();
+        const price = parseFloat(node.dataset.price || '0') || 0;
+        const chance = parseFloat(node.dataset.chance || '0') || 0;
+        return { node, name, price, chance };
+      });
+    }
+
+    function updateCreditsDisplay() {
+      creditsEl.textContent = credits.toFixed(2).replace('.00', '');
+      // disable button if not enough credits
+      openSetBtn.disabled = credits < openSetCost;
+    }
+
+    // Weighted random selection (handles chances not summing to 100)
+    function weightedPick(items) {
+      const total = items.reduce((s, it) => s + it.chance, 0);
+      const rnd = Math.random() * total;
+      let acc = 0;
+      for (const it of items) {
+        acc += it.chance;
+        if (rnd <= acc) return it;
+      }
+      // fallback
+      return items[items.length - 1];
+    }
+
+    // Animacja "szybkiej zmiany tekstu" - pokazuje losowo nazwy przez duration ms
+    function animateRolling(items, duration = 2000, intervalMs = 60) {
+      return new Promise(resolve => {
+        let elapsed = 0;
+        const iv = setInterval(() => {
+          const randomItem = items[Math.floor(Math.random() * items.length)];
+          rollingTextEl.textContent = randomItem.name;
+          elapsed += intervalMs;
+          if (elapsed >= duration) {
+            clearInterval(iv);
+            resolve();
+          }
+        }, intervalMs);
+      });
+    }
+
+    // Główna logika otwierania seta
+    async function openSet() {
+      const items = readCards();
+      if (credits < openSetCost) {
+        alert('Brak wystarczających kredytów.');
+        return;
+      }
+      // Zabierz kredyt
+      credits -= openSetCost;
+      updateCreditsDisplay();
+
+      // Przygotowanie wizualne
+      resultNameEl.textContent = '—';
+      resultPriceEl.textContent = '—';
+      rollingTextEl.textContent = 'Losowanie...';
+      sellBtn.disabled = true;
+      sendBtn.disabled = true;
+
+      // Animacja "rolling"
+      await animateRolling(items, 2000, 50); // 2 sekundy, zmiana co 50ms
+
+      // Wybór według szans
+      const picked = weightedPick(items);
+
+      // Zaktualizuj wynik
+      rollingTextEl.textContent = picked.name; // ostatnia nazwa
+      resultNameEl.textContent = picked.name;
+      resultPriceEl.textContent = Number(picked.price).toFixed(2);
+
+      // Podświetl w liście (proste - dodaj atrybut)
+      items.forEach(it => it.node.removeAttribute('data-picked'));
+      picked.node.setAttribute('data-picked', 'true');
+
+      // Aktywuj przyciski z informacją o cenie
+      sellBtn.disabled = false;
+      sendBtn.disabled = false;
+
+      // Przechowaj aktualnie wylosowany przedmiot
+      currentPick = picked;
+    }
+
+    // Sprzedaj - zwraca 90% ceny do portfela
+    function sellCurrentPick() {
+      if (!currentPick) return;
+      const price = Number(currentPick.price) || 0;
+      const toReturn = +(price * 0.9).toFixed(2); // 90%, zaokr. do 2 miejsc
+      credits += toReturn;
+      updateCreditsDisplay();
+
+      // Wyzeruj wynik
+      resultNameEl.textContent = '—';
+      resultPriceEl.textContent = '—';
+      rollingTextEl.textContent = '—';
+      sellBtn.disabled = true;
+      sendBtn.disabled = true;
+
+      // Usuń podświetlenie
+      currentPick.node.removeAttribute('data-picked');
+      currentPick = null;
+    }
+
+    // Wyślij - pokazuje powiadomienie przeglądarki
+    function sendCurrentPick() {
+      if (!currentPick) return;
+      const name = currentPick.name;
+      // Spróbuj użyć Notification API
+      if ("Notification" in window) {
+        if (Notification.permission === "granted") {
+          new Notification("Przedmiot wysłany", { body: `${name} został wysłany.` });
+        } else if (Notification.permission !== "denied") {
+          Notification.requestPermission().then(permission => {
+            if (permission === "granted") {
+              new Notification("Przedmiot wysłany", { body: `${name} został wysłany.` });
+            } else {
+              alert(`${name} - (symulacja wysłania).`);
+            }
+          });
+        } else {
+          // denied
+          alert(`${name} - (symulacja wysłania).`);
+        }
+      } else {
+        alert(`${name} - (Twoja przeglądarka nie wspiera powiadomień).`);
+      }
+
+      // Opcjonalnie możesz też po wysłaniu "usunąć" przedmiot z wyniku:
+      // Tutaj tylko deaktywujemy przyciski (możesz zmienić logikę)
+      sellBtn.disabled = true;
+      sendBtn.disabled = true;
+      resultNameEl.textContent = '—';
+      resultPriceEl.textContent = '—';
+      rollingTextEl.textContent = '—';
+      currentPick.node.removeAttribute('data-picked');
+      currentPick = null;
+    }
+
+    // --- Hooki i inicjalizacja ---
+    let currentPick = null;
+
+    openSetBtn.addEventListener('click', openSet);
+    sellBtn.addEventListener('click', sellCurrentPick);
+    sendBtn.addEventListener('click', sendCurrentPick);
+
+    // inicjalne wyświetlenie
+    updateCreditsDisplay();
+
+    // Drobna ochrona: upewnij się że sumy szans nie są totalnie zerowe
+    (function validateChances() {
+      const items = readCards();
+      const total = items.reduce((s,it) => s + it.chance, 0);
+      if (total <= 0) {
+        console.warn('Uwaga: sumy szans w kartach są <= 0. Wszystkie szanse ustawione domyślnie równomiernie.');
+        const even = 100/items.length;
+        items.forEach(it => it.chance = even);
+      }
+    })();
+
+    // Dodatkowa pomoc deweloperska: konsola z instrukcjami
+    console.log('Set Opener - szkielet załadowany. Edytuj <li class="card"> data-name, data-price, data-chance aby zmienić zawartość setu.');
+  </script>
+
+</body>
+</html>
 
