@@ -1,266 +1,157 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="utf-8" />
-  <title>Set Opener - Szkielet</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- Brak CSS - tylko surowy HTML + JS zgodnie z prośbą -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Card Pack Opener</title>
 </head>
-<body>
+<body style="margin:0; overflow:hidden; background:#111; color:white; font-family:sans-serif;">
 
-  <!-- Nagłówek z kredytami -->
-  <header>
-    <h1>Set Opener - Demo</h1>
-    <div>
-      Portfel (credits): <span id="credits">10</span>
-    </div>
-    <div>
-      <button id="openSetBtn">Otwórz set (koszt: 1 credit)</button>
-    </div>
-    <hr/>
-  </header>
+  <div id="credits" style="position:fixed; top:10px; left:10px; font-size:18px;">
+    💰 Credits: <span id="credits-count">10</span>
+  </div>
 
-  <!-- Lista 10 kart (ustawiasz nazwy, cenę i szansę przez data-atributy) -->
-  <section>
-    <h2>Set - 10 kart</h2>
-    <ol id="cardList">
-      <!-- Przykładowe pozycje. Edytuj name, data-price (cena), data-chance (procentowa szansa). -->
-      <li class="card" data-name="Skin Alpha"   data-price="12.50" data-chance="25">Skin Alpha — 25% — 12.50</li>
-      <li class="card" data-name="Skin Beta"    data-price="8.00"  data-chance="20">Skin Beta — 20% — 8.00</li>
-      <li class="card" data-name="Skin Gamma"   data-price="5.00"  data-chance="15">Skin Gamma — 15% — 5.00</li>
-      <li class="card" data-name="Skin Delta"   data-price="3.00"  data-chance="10">Skin Delta — 10% — 3.00</li>
-      <li class="card" data-name="Skin Epsilon" data-price="2.00"  data-chance="8">Skin Epsilon — 8% — 2.00</li>
-      <li class="card" data-name="Skin Zeta"    data-price="1.50"  data-chance="7">Skin Zeta — 7% — 1.50</li>
-      <li class="card" data-name="Skin Eta"     data-price="1.00"  data-chance="6">Skin Eta — 6% — 1.00</li>
-      <li class="card" data-name="Skin Theta"   data-price="0.50"  data-chance="4">Skin Theta — 4% — 0.50</li>
-      <li class="card" data-name="Skin Iota"    data-price="0.30"  data-chance="3">Skin Iota — 3% — 0.30</li>
-      <li class="card" data-name="Skin Kappa"   data-price="0.10"  data-chance="2">Skin Kappa — 2% — 0.10</li>
-    </ol>
-    <p>Uwaga: wartości w <code>data-chance</code> powinny sumować się do 100, ale skrypt poradzi sobie też gdy będą inaczej (normalizuje).</p>
-  </section>
+  <div id="result" style="position:fixed; bottom:20px; width:100%; text-align:center;">
+    <p id="result-text"></p>
+    <button id="sell-btn" style="display:none;">Sprzedaj</button>
+    <button id="send-btn" style="display:none;">Wyślij</button>
+  </div>
 
-  <hr/>
+  <button id="spin-btn" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); font-size:20px; padding:10px 20px;">Losuj</button>
 
-  <!-- Miejsce animacji i wyników losowania -->
-  <section>
-    <h2>Wynik losowania</h2>
-    <div>
-      <strong>Losuje:</strong> <span id="rollingText">—</span>
-    </div>
-    <div>
-      <strong>Wylosowano:</strong> <span id="resultName">—</span>
-    </div>
-    <div>
-      <strong>Cena:</strong> <span id="resultPrice">—</span>
-    </div>
-    <div>
-      <button id="sellBtn" disabled>Sprzedaj (zwraca 90%)</button>
-      <button id="sendBtn" disabled>Wyślij (powiadomienie)</button>
-    </div>
-  </section>
-
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <script>
-    /**************************************************************************
-     * Szkielet JavaScript do:
-     * - wyświetlania kredytów,
-     * - otwierania seta (koszt 1 credit),
-     * - losowania według procentowych szans,
-     * - animacji "szybkiej zmiany tekstu" podczas losowania,
-     * - obsługi przycisku Sprzedaj (90% ceny dodawane do portfela),
-     * - obsługi przycisku Wyślij (powiadomienie przeglądarki).
-     *
-     * Konfiguracja:
-     * - Aby zmienić ceny i procentowe szanse, edytuj elementy <li class="card">:
-     *   data-name, data-price, data-chance.
-     *
-     * UWAGI:
-     * - Brak połączeń sieciowych, brak płatności.
-     * - Otwarcie seta kosztuje 1 credit (możesz zmienić to w openSetCost).
-     **************************************************************************/
+    // --- SCENA ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-    // --- Ustawienia ---
-    const openSetCost = 1; // koszt otwarcia 1 setu (w credits)
-    const initialCredits = 10;
+    // --- ŚWIATŁO ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(0, 2, 2);
+    scene.add(directionalLight);
 
-    // --- Stan aplikacji ---
-    let credits = initialCredits;
-    const creditsEl = document.getElementById('credits');
-    const openSetBtn = document.getElementById('openSetBtn');
-    const cardListEl = document.getElementById('cardList');
-    const rollingTextEl = document.getElementById('rollingText');
-    const resultNameEl = document.getElementById('resultName');
-    const resultPriceEl = document.getElementById('resultPrice');
-    const sellBtn = document.getElementById('sellBtn');
-    const sendBtn = document.getElementById('sendBtn');
+    // --- PACZKI ---
+    const boosters = [];
+    const colors = [0xff4444,0xff8844,0xffcc44,0x88ff44,0x44ffcc,0x4488ff,0x8844ff,0xcc44ff,0xff44aa,0xffffff];
+    const geometry = new THREE.BoxGeometry(1,1.5,0.1);
+    const radius = 5;
+    const totalBoosters = colors.length;
 
-    // --- Inicjalizacja DOM i danych kart ---
-    function readCards() {
-      const nodes = Array.from(cardListEl.querySelectorAll('.card'));
-      // map to objects with properties
-      return nodes.map(node => {
-        const name = node.dataset.name || node.textContent.trim();
-        const price = parseFloat(node.dataset.price || '0') || 0;
-        const chance = parseFloat(node.dataset.chance || '0') || 0;
-        return { node, name, price, chance };
-      });
-    }
+    function createBoosters() {
+      // usuń stare paczki
+      boosters.forEach(b=>scene.remove(b.mesh));
+      boosters.length = 0;
 
-    function updateCreditsDisplay() {
-      creditsEl.textContent = credits.toFixed(2).replace('.00', '');
-      // disable button if not enough credits
-      openSetBtn.disabled = credits < openSetCost;
-    }
+      for(let i=0; i<totalBoosters; i++){
+        const material = new THREE.MeshStandardMaterial({color: colors[i]});
+        const booster = new THREE.Mesh(geometry, material);
 
-    // Weighted random selection (handles chances not summing to 100)
-    function weightedPick(items) {
-      const total = items.reduce((s, it) => s + it.chance, 0);
-      const rnd = Math.random() * total;
-      let acc = 0;
-      for (const it of items) {
-        acc += it.chance;
-        if (rnd <= acc) return it;
+        const angle = (i / totalBoosters) * Math.PI * 2; // pełne koło
+        booster.position.x = Math.sin(angle) * radius;
+        booster.position.z = Math.cos(angle) * radius;
+        booster.rotation.y = -angle;
+
+        scene.add(booster);
+        boosters.push({mesh: booster, angle: angle});
       }
-      // fallback
-      return items[items.length - 1];
     }
 
-    // Animacja "szybkiej zmiany tekstu" - pokazuje losowo nazwy przez duration ms
-    function animateRolling(items, duration = 2000, intervalMs = 60) {
-      return new Promise(resolve => {
-        let elapsed = 0;
-        const iv = setInterval(() => {
-          const randomItem = items[Math.floor(Math.random() * items.length)];
-          rollingTextEl.textContent = randomItem.name;
-          elapsed += intervalMs;
-          if (elapsed >= duration) {
-            clearInterval(iv);
-            resolve();
-          }
-        }, intervalMs);
-      });
-    }
+    createBoosters();
 
-    // Główna logika otwierania seta
-    async function openSet() {
-      const items = readCards();
-      if (credits < openSetCost) {
-        alert('Brak wystarczających kredytów.');
-        return;
-      }
-      // Zabierz kredyt
-      credits -= openSetCost;
-      updateCreditsDisplay();
+    camera.position.set(0, 1.5, 0);
+    camera.lookAt(0,1.5,5);
 
-      // Przygotowanie wizualne
-      resultNameEl.textContent = '—';
-      resultPriceEl.textContent = '—';
-      rollingTextEl.textContent = 'Losowanie...';
-      sellBtn.disabled = true;
-      sendBtn.disabled = true;
+    // --- ANIMACJA ---
+    let spinning = false;
+    let spinSpeed = 0;
+    let openingBooster = null;
+    let targetZ = 0;
 
-      // Animacja "rolling"
-      await animateRolling(items, 2000, 50); // 2 sekundy, zmiana co 50ms
+    function animate(){
+      requestAnimationFrame(animate);
 
-      // Wybór według szans
-      const picked = weightedPick(items);
+      if(spinning){
+        spinSpeed *= 0.97; // zwalnianie
+        boosters.forEach(b=>{
+          b.angle += spinSpeed;
+          b.mesh.position.x = Math.sin(b.angle) * radius;
+          b.mesh.position.z = Math.cos(b.angle) * radius;
+          b.mesh.rotation.y = -b.angle;
+        });
 
-      // Zaktualizuj wynik
-      rollingTextEl.textContent = picked.name; // ostatnia nazwa
-      resultNameEl.textContent = picked.name;
-      resultPriceEl.textContent = Number(picked.price).toFixed(2);
-
-      // Podświetl w liście (proste - dodaj atrybut)
-      items.forEach(it => it.node.removeAttribute('data-picked'));
-      picked.node.setAttribute('data-picked', 'true');
-
-      // Aktywuj przyciski z informacją o cenie
-      sellBtn.disabled = false;
-      sendBtn.disabled = false;
-
-      // Przechowaj aktualnie wylosowany przedmiot
-      currentPick = picked;
-    }
-
-    // Sprzedaj - zwraca 90% ceny do portfela
-    function sellCurrentPick() {
-      if (!currentPick) return;
-      const price = Number(currentPick.price) || 0;
-      const toReturn = +(price * 0.9).toFixed(2); // 90%, zaokr. do 2 miejsc
-      credits += toReturn;
-      updateCreditsDisplay();
-
-      // Wyzeruj wynik
-      resultNameEl.textContent = '—';
-      resultPriceEl.textContent = '—';
-      rollingTextEl.textContent = '—';
-      sellBtn.disabled = true;
-      sendBtn.disabled = true;
-
-      // Usuń podświetlenie
-      currentPick.node.removeAttribute('data-picked');
-      currentPick = null;
-    }
-
-    // Wyślij - pokazuje powiadomienie przeglądarki
-    function sendCurrentPick() {
-      if (!currentPick) return;
-      const name = currentPick.name;
-      // Spróbuj użyć Notification API
-      if ("Notification" in window) {
-        if (Notification.permission === "granted") {
-          new Notification("Przedmiot wysłany", { body: `${name} został wysłany.` });
-        } else if (Notification.permission !== "denied") {
-          Notification.requestPermission().then(permission => {
-            if (permission === "granted") {
-              new Notification("Przedmiot wysłany", { body: `${name} został wysłany.` });
-            } else {
-              alert(`${name} - (symulacja wysłania).`);
-            }
+        if(spinSpeed < 0.002){
+          spinning = false;
+          // wybierz paczkę najbliższą osi Z kamery
+          let closest = boosters[0];
+          let minDist = Math.abs(closest.mesh.position.z - 5);
+          boosters.forEach(b=>{
+            let dist = Math.abs(b.mesh.position.z - 5);
+            if(dist < minDist){ closest = b; minDist = dist; }
           });
-        } else {
-          // denied
-          alert(`${name} - (symulacja wysłania).`);
+          openingBooster = closest.mesh;
+          targetZ = 8; // wysunięcie do przodu
+          setTimeout(()=>{
+            document.getElementById('result-text').textContent = "🎉 Wylosowano: Ultra Rare Card (50$)";
+            document.getElementById('sell-btn').style.display = 'inline-block';
+            document.getElementById('send-btn').style.display = 'inline-block';
+          },1000);
         }
-      } else {
-        alert(`${name} - (Twoja przeglądarka nie wspiera powiadomień).`);
       }
 
-      // Opcjonalnie możesz też po wysłaniu "usunąć" przedmiot z wyniku:
-      // Tutaj tylko deaktywujemy przyciski (możesz zmienić logikę)
-      sellBtn.disabled = true;
-      sendBtn.disabled = true;
-      resultNameEl.textContent = '—';
-      resultPriceEl.textContent = '—';
-      rollingTextEl.textContent = '—';
-      currentPick.node.removeAttribute('data-picked');
-      currentPick = null;
+      if(openingBooster){
+        openingBooster.position.z = THREE.MathUtils.lerp(openingBooster.position.z, targetZ, 0.1);
+      }
+
+      renderer.render(scene, camera);
     }
 
-    // --- Hooki i inicjalizacja ---
-    let currentPick = null;
+    animate();
 
-    openSetBtn.addEventListener('click', openSet);
-    sellBtn.addEventListener('click', sellCurrentPick);
-    sendBtn.addEventListener('click', sendCurrentPick);
+    // --- PRZYCISK LOSUJ ---
+    const spinBtn = document.getElementById('spin-btn');
+    spinBtn.addEventListener('click', ()=>{
+      if(spinning || openingBooster) return;
+      spinSpeed = 0.3 + Math.random()*0.3;
+      spinning = true;
+      spinBtn.style.display = 'none';
+    });
 
-    // inicjalne wyświetlenie
-    updateCreditsDisplay();
+    // --- PRZYCISKI SPRZEDAJ/WYŚLIJ ---
+    const creditsEl = document.getElementById('credits-count');
+    let credits = 10;
 
-    // Drobna ochrona: upewnij się że sumy szans nie są totalnie zerowe
-    (function validateChances() {
-      const items = readCards();
-      const total = items.reduce((s,it) => s + it.chance, 0);
-      if (total <= 0) {
-        console.warn('Uwaga: sumy szans w kartach są <= 0. Wszystkie szanse ustawione domyślnie równomiernie.');
-        const even = 100/items.length;
-        items.forEach(it => it.chance = even);
-      }
-    })();
+    function resetGame(){
+      createBoosters();
+      openingBooster = null;
+      document.getElementById('result-text').textContent = '';
+      document.getElementById('sell-btn').style.display = 'none';
+      document.getElementById('send-btn').style.display = 'none';
+      spinBtn.style.display = 'inline-block';
+    }
 
-    // Dodatkowa pomoc deweloperska: konsola z instrukcjami
-    console.log('Set Opener - szkielet załadowany. Edytuj <li class="card"> data-name, data-price, data-chance aby zmienić zawartość setu.');
+    document.getElementById('sell-btn').addEventListener('click', ()=>{
+      credits += 45;
+      creditsEl.textContent = credits;
+      alert('Sprzedano! +45 kredytów');
+      resetGame();
+    });
+
+    document.getElementById('send-btn').addEventListener('click', ()=>{
+      alert('📦 Wysłano kartę do Ciebie!');
+      resetGame();
+    });
+
+    // --- DOPASOWANIE OKNA ---
+    window.addEventListener('resize', ()=>{
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
   </script>
-
 </body>
 </html>
-
